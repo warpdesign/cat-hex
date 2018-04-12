@@ -18,11 +18,14 @@ class HexaFile {
 
     statFile() {
         this.fstat = fs.statSync(this.path);
+        if (this.fstat && this.fstat.isDirectory()) {
+            throw "Error: ch only works on files";
+        }
     }
 
     openFile() {
-        console.log('Reading file %s', this.path);
         this.statFile(this.path);
+        console.log('Reading file %s', this.path);
         this.fd = fs.openSync(this.path, 'r');
         this.buffer = new Buffer(BUFFER_LENGTH);
         this.readNextChunk();
