@@ -2,7 +2,9 @@
 cat content of binary files - the cat of hexadecimal
 
 # Installation
-> npm install -g
+> npm install -g cat-hex
+
+This will install a new `ch` command.
 
 # Usage
 
