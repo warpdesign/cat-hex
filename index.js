@@ -23,7 +23,12 @@ class HexaFile {
      * if path points to a directory
      */
     statFile() {
-        this.fstat = fs.statSync(this.path);
+        try {
+            this.fstat = fs.statSync(this.path);
+        } catch (err) {
+            throw "Error: cannot open file " + this.path;
+        }
+
         if (this.fstat && this.fstat.isDirectory()) {
             throw "Error: ch only works on files";
         }
@@ -74,23 +79,36 @@ class HexaFile {
     }
 
     /**
+     * Prints current line, incrementing the line counter
+     */
+    printLine() {
+        var line = '';
+        if (this.showOffset) {
+            line += this.getOffset();
+            line += '   ';
+        }
+
+        line += this.generateLine();
+
+        this.currentOffset += LINE_WIDTH;
+        console.log(line);
+
+        this.currentLine++;
+
+        // use setImmediate instead of a simple for() loop
+        // so that we may handle SIGPIPE signal
+        if (this.currentLine < this.maxLine) {
+            setImmediate(() => { this.printLine() });
+        }
+    }
+
+    /**
      * Prints hexa dump of the specified file using specified params
      */
     print() {
-        const max = Math.ceil(this.fstat.size / LINE_WIDTH);
-
-        for (var i = 0; i < max; ++i) {
-            var line = '';
-            if (this.showOffset) {
-                line += this.getOffset();
-                line += '   ';
-            }
-
-            line += this.generateLine();
-
-            this.currentOffset += LINE_WIDTH;
-            console.log(line);
-        }
+        this.maxLine = Math.ceil(this.fstat.size / LINE_WIDTH);
+        this.currentLine = 0;
+        this.printLine();
     }
 
     /**
@@ -227,11 +245,24 @@ function validateParams(program) {
 }
 
 program.arguments('ch <file>')
+    .description('Prints contents of binary files as hexadecimal & ascii.')
     .option('-O, --no-offset', 'do not show file offset', false)
     .option('-H, --no-hexa', 'do not display hexadecimal content', false)
     .option('-s, --start-offset [startOffset]', 'start at specified offset', 0)
     .option('-b, --block-size [blockSize]', 'size of block, can be 8, 16, 32, 64', 8)
     .parse(process.argv);
+
+/**
+ * Exit the app when receiving the SIGPIPE signal:
+ * it means pipe has ended (eg. user used ch foo |more and
+ * pressed `q` to exit)
+ */
+process.on('SIGPIPE', () => {
+    if (hexa) {
+        hexa.cleanup();
+    }
+    process.exit();
+});
 
 if (!program.args.length || !validateParams(program)) {
     program.help();
@@ -242,9 +273,10 @@ if (!program.args.length || !validateParams(program)) {
         var hexa = new HexaFile(path, program.blockSize, program.startOffset, program.hexa, program.offset);
         hexa.openFile();
         hexa.print();
-        hexa.cleanup();
     } catch (err) {
-        hexa.cleanup();
-        console.log('%s\n', err);
+        console.log(err);
+        if (hexa) {
+            hexa.cleanup();
+        }
     }
 }
