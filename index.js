@@ -253,15 +253,30 @@ program.arguments('ch <file>')
     .parse(process.argv);
 
 /**
- * Exit the app when receiving the SIGPIPE signal:
- * it means pipe has ended (eg. user used ch foo |more and
- * pressed `q` to exit)
+ * Global cleanup function called when closing pipe
+ * or read error occured
  */
-process.on('SIGPIPE', () => {
+function cleanup() {
     if (hexa) {
         hexa.cleanup();
     }
     process.exit();
+}
+
+/**
+ * Unix: exit the app when receiving the SIGPIPE signal:
+ * it means pipe has ended (eg. user used ch foo |more and
+ * pressed `q` to exit)
+ */
+process.on('SIGPIPE', cleanup);
+
+/**
+ * Properly catch pipe exit on Windows needs a special case
+ */
+process.stdout.on('error', (err) => {
+    if (err.code == "EPIPE") {
+        cleanup();
+    }
 });
 
 if (!program.args.length || !validateParams(program)) {
@@ -275,8 +290,6 @@ if (!program.args.length || !validateParams(program)) {
         hexa.print();
     } catch (err) {
         console.log(err);
-        if (hexa) {
-            hexa.cleanup();
-        }
+        cleanup();
     }
 }
