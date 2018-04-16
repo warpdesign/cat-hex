@@ -4,7 +4,8 @@ const program = require('commander'),
     LINE_WIDTH = 192 / 8,
     // 512kb buffer: we could add a lot more but this will make it work better
     // on older devices like USB 1.x sticks
-    BUFFER_LENGTH = 512 * 1024;
+    BUFFER_LENGTH = 512 * 1024,
+    MAX_32BIT = Math.pow(2, 32) - 1;
 
 class HexaFile {
     constructor(path, blockSize, startOffset, hexa, offset) {
@@ -32,6 +33,10 @@ class HexaFile {
         if (this.fstat && this.fstat.isDirectory()) {
             throw "Error: ch only works on files";
         }
+
+        if (this.fstat && !this.fstat.size) {
+            throw "Empty file";
+        }
     }
 
     /**
@@ -54,7 +59,7 @@ class HexaFile {
      */
     checkStartOffset() {
         if (this.currentOffset >= this.fstat.size) {
-            console.log('Warning: specified start offset is out of bounds, using default start offset of 0')
+            console.log('Warning: specified start offset is out of bounds, using default start offset of 0');
             this.currentOffset = 0;
             this.bufferStart = 0;
         }
@@ -199,7 +204,7 @@ class HexaFile {
      */
     getAscii(offset) {
         var code = this.readByteFromFile(offset);
-        if (code >= 32 && code < 127) {
+        if (code > 160 || (code >= 32 && code < 127)) {
             return String.fromCharCode(code);
         } else {
             return '.';
@@ -207,13 +212,17 @@ class HexaFile {
     }
 
     /**
-     * Convert a 32bit number into hexa decimal
+     * Convert a 64bit number into hexa decimal
      * 
      * @param {number} number the number to convert in hexa
      * @returns {String}
      */
     convertOffsetTotHexa(number) {
-        return ("00000000" + number.toString(16)).substr(-8);
+        if (number <= MAX_32BIT) {
+            return ("00000000" + number.toString(16)).substr(-8);
+        } else {
+            return ("0000000000000000" + number.toString(16)).substr(-16);
+        }
     }
 
     /**
