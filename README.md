@@ -20,7 +20,7 @@ This will install a new `ch` command.
     -h, --help                        output usage information
 ```
 
-# Example
+# Examples
 
 Shows `file.zip` content, with `32 bytes` blocksize:
 

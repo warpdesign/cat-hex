@@ -5,6 +5,12 @@
     "type": "git",
     "url": "https://github.com/warpdesign/cat-hex.git"
   },
+  "keywords": [
+    "ascii",
+    "hexadecimal",
+    "binary",
+    "viewer"
+  ],  
   "description": "shows content of binary files - the cat of hexadecimal",
   "main": "index.js",
   "scripts": {
