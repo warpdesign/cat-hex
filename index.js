@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 const program = require('commander'),
+    version = require('./package.json').version,
     fs = require('fs'),
     LINE_WIDTH = 192 / 8,
     // 512kb buffer: we could add a lot more but this will make it work better
     // on older devices like USB 1.x sticks
     BUFFER_LENGTH = 512 * 1024,
-    MAX_32BIT = Math.pow(2, 32) - 1;
+    MAX_32BIT = 0xffffffff,
+    isWindows = process.platform == 'win32';
 
 class HexaFile {
     constructor(path, blockSize, startOffset, hexa, offset) {
@@ -204,7 +206,10 @@ class HexaFile {
      */
     getAscii(offset) {
         var code = this.readByteFromFile(offset);
-        if (code > 160 || (code >= 32 && code < 127)) {
+        // Most Windows command line tools (eg. more) do not properly handle utf8
+        // so we do not print extended ascci chars (code > 160)
+        // on this platform, this allows to use `ch foo.zip | more` safely
+        if ((!isWindows && code > 160) || (code >= 32 && code < 127)) {
             return String.fromCharCode(code);
         } else {
             return '.';
@@ -259,6 +264,7 @@ program.arguments('ch <file>')
     .option('-H, --no-hexa', 'do not display hexadecimal content', false)
     .option('-s, --start-offset [startOffset]', 'start at specified offset', 0)
     .option('-b, --block-size [blockSize]', 'size of block, can be 8, 16, 32, 64', 8)
+    .version(version, '-v, --version')
     .parse(process.argv);
 
 /**

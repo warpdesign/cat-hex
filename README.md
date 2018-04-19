@@ -17,6 +17,7 @@ This will install a new `ch` command.
     -H, --no-hexa                     do not display hexadecimal content
     -s, --start-offset [startOffset]  start at specified offset (default: 0)
     -b, --block-size [blockSize]      size of block, can be 8, 16, 32, 64 (default: 8)
+    -v, --version                     output the version number
     -h, --help                        output usage information
 ```
 
