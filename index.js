@@ -51,7 +51,7 @@ class HexaFile {
         this.statFile(this.path);
         this.checkStartOffset();
         this.fd = fs.openSync(this.path, 'r');
-        this.buffer = new Buffer(BUFFER_LENGTH);
+        this.buffer = Buffer.alloc(BUFFER_LENGTH);
         this.readChunk(this.currentOffset);
     }
 
@@ -209,7 +209,8 @@ class HexaFile {
         // Most Windows command line tools (eg. more) do not properly handle utf8
         // so we do not print extended ascci chars (code > 160)
         // on this platform, this allows to use `ch foo.zip | more` safely
-        if ((!isWindows && code > 160) || (code >= 32 && code < 127)) {
+        // Also skip 0xAD which doesn't seem to be a valid character
+        if (((!isWindows && code > 160) || (code >= 32 && code < 127)) && code !== 0xAD) {
             return String.fromCharCode(code);
         } else {
             return '.';
