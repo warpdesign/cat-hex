@@ -2,6 +2,8 @@
 const program = require('commander'),
     version = require('./package.json').version,
     fs = require('fs'),
+    process = require('process'),
+    EOL = require('os').EOL,
     LINE_WIDTH = 192 / 8,
     // 512kb buffer: we could add a lot more but this will make it work better
     // on older devices like USB 1.x sticks
@@ -11,7 +13,7 @@ const program = require('commander'),
 
 class HexaFile {
     constructor(path, blockSize, startOffset, hexa, offset) {
-        this.err = '';
+        this.stopped = false;
         this.path = path;
         this.currentOffset = parseInt(startOffset);
         this.buffer = null;
@@ -19,6 +21,13 @@ class HexaFile {
         this.bufferStart = this.currentOffset;
         this.showOffset = offset;
         this.showHexa = hexa;
+        this.bindDrainEvent();
+    }
+
+    bindDrainEvent() {
+        process.stdout.on('drain', () => {
+            this.printLine();
+        });
     }
 
     /**
@@ -80,6 +89,8 @@ class HexaFile {
      * Closes the file if opened
      */
     cleanup() {
+        console.log('*** Interrupted');
+        this.stopped = true;
         if (this.fd) {
             fs.closeSync(this.fd);
         }
@@ -89,23 +100,29 @@ class HexaFile {
      * Prints current line, incrementing the line counter
      */
     printLine() {
-        var line = '';
-        if (this.showOffset) {
-            line += this.getOffset();
-            line += '   ';
-        }
+        if (!this.stopped && this.currentLine < this.maxLine) {
+            var line = '';
+            var isBufferFull;
 
-        line += this.generateLine();
+            if (this.showOffset) {
+                line += this.getOffset();
+                line += '   ';
+            }
 
-        this.currentOffset += LINE_WIDTH;
-        console.log(line);
+            line += this.generateLine();
 
-        this.currentLine++;
+            this.currentOffset += LINE_WIDTH;
+            isBufferFull = !process.stdout.write(line);
+            // console.log(line);
 
-        // use setImmediate instead of a simple for() loop
-        // so that we may handle SIGPIPE signal
-        if (this.currentLine < this.maxLine) {
-            setImmediate(() => { this.printLine() });
+            this.currentLine++;
+
+            // use setImmediate instead of a simple for() loop
+            // so that we may handle SIGPIPE signal
+            // TODO: stop calling setImediate if not needed
+            if (!isBufferFull) {
+                setImmediate(() => { this.printLine(); });
+            }
         }
     }
 
@@ -143,6 +160,8 @@ class HexaFile {
                 hexa += '  ';
             }
         }
+
+        ascii += EOL;
 
         return this.showHexa ? hexa + ascii : ascii;
     }
@@ -285,6 +304,11 @@ function cleanup() {
  * pressed `q` to exit)
  */
 process.on('SIGPIPE', cleanup);
+
+/**
+ * Detect CTRL+C and stop feeding stdout in that case
+ */
+process.on('SIGINT', cleanup);
 
 /**
  * Properly catch pipe exit on Windows needs a special case
