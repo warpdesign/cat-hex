@@ -4,7 +4,8 @@ const program = require('commander'),
     fs = require('fs'),
     process = require('process'),
     EOL = require('os').EOL,
-    LINE_WIDTH = 192 / 8,
+    // 16 bytes
+    DEFAULT_LINE_WIDTH = 16,
     // 512kb buffer: we could add a lot more but this will make it work better
     // on older devices like USB 1.x sticks
     BUFFER_LENGTH = 512 * 1024,
@@ -12,7 +13,7 @@ const program = require('commander'),
     isWindows = process.platform == 'win32';
 
 class HexaFile {
-    constructor(path, blockSize, startOffset, hexa, offset) {
+    constructor(path, blockSize, startOffset, hexa, offset, lineWidth, maxOffset) {
         this.stopped = false;
         this.path = path;
         this.currentOffset = parseInt(startOffset);
@@ -21,6 +22,8 @@ class HexaFile {
         this.bufferStart = this.currentOffset;
         this.showOffset = offset;
         this.showHexa = hexa;
+        this.lineWidth = parseInt(lineWidth);
+        this.maxOffset = parseInt(maxOffset);
         this.bindDrainEvent();
     }
 
@@ -59,13 +62,29 @@ class HexaFile {
     openFile() {
         this.statFile(this.path);
         this.checkStartOffset();
+        this.getMaxOffset();
         this.fd = fs.openSync(this.path, 'r');
         this.buffer = Buffer.alloc(BUFFER_LENGTH);
         this.readChunk(this.currentOffset);
     }
 
     /**
-     * Checks that start iffset us within file otherwise
+     * Calculates the max offset
+     */
+    getMaxOffset() {
+        const maxOffset = this.currentOffset + this.maxOffset;
+
+        if (this.maxOffset === 0) {
+            this.maxOffset = this.fstat.size - this.currentOffset;
+        } else if (maxOffset > this.fstat.size) {
+            this.maxOffset = this.fstat.size;
+        } else {
+            this.maxOffset = maxOffset;
+        }
+    }
+
+    /**
+     * Checks that start offset is within file otherwise
      * reset it to 0
      */
     checkStartOffset() {
@@ -111,7 +130,7 @@ class HexaFile {
 
             line += this.generateLine();
 
-            this.currentOffset += LINE_WIDTH;
+            this.currentOffset += this.lineWidth;
             isBufferFull = !process.stdout.write(line);
             // console.log(line);
 
@@ -130,7 +149,7 @@ class HexaFile {
      * Prints hexa dump of the specified file using specified params
      */
     print() {
-        this.maxLine = Math.ceil(this.fstat.size / LINE_WIDTH);
+        this.maxLine = Math.ceil(this.maxOffset / this.lineWidth);
         this.currentLine = 0;
         this.printLine();
     }
@@ -151,19 +170,19 @@ class HexaFile {
             pos = 0,
             spacing = this.blockSize / 8;
 
-        while (pos < LINE_WIDTH) {
+        while (pos < this.lineWidth && ((this.currentOffset + pos) < this.maxOffset)) {
             hexa += this.getByteHexa(this.currentOffset + pos);
             ascii += this.getAscii(this.currentOffset + pos);
             pos++;
 
             if (pos && !(pos % spacing)) {
-                hexa += '  ';
+                hexa += ' ';
             }
         }
 
         ascii += EOL;
 
-        return this.showHexa ? hexa + ascii : ascii;
+        return this.showHexa ? hexa + '  ' + ascii : ascii;
     }
 
     /**
@@ -189,8 +208,7 @@ class HexaFile {
      * @param {number} offset file offset to get data from
      */
     readByteFromFile(offset) {
-        if (offset < this.fstat.size) {
-            // console.log('checking', offset);
+        if (offset < this.maxOffset) {
             this.checkBuffer(offset);
             return this.buffer[offset - this.bufferStart];
         } else {
@@ -273,6 +291,10 @@ function validateParams(program) {
     } else if (isNaN(parseInt(program.startOffset)) || parseInt(program.startOffset) < 0) {
         console.log('Error: start offset must be > 0', program);
         return false;
+    } else if (isNaN(parseInt(program.lineWidth)) || parseInt(program.lineWidth) <= 0) {
+        console.log('Error: line width must be > 0', program);
+    } else if (isNaN(parseInt(program.maxOffset)) || parseInt(program.maxOffset) < 0) {
+        console.log('Error: max offset must be >= 0', program);
     }
 
     return true;
@@ -280,10 +302,12 @@ function validateParams(program) {
 
 program.arguments('ch <file>')
     .description('Prints contents of binary files as hexadecimal & ascii.')
-    .option('-O, --no-offset', 'do not show file offset', false)
-    .option('-H, --no-hexa', 'do not display hexadecimal content', false)
-    .option('-s, --start-offset [startOffset]', 'start at specified offset', 0)
     .option('-b, --block-size [blockSize]', 'size of block, can be 8, 16, 32, 64', 8)
+    .option('-H, --no-hexa', 'do not display hexadecimal content', false)
+    .option('-l, --line-width [lineWidth]', 'line width in bytes', DEFAULT_LINE_WIDTH)
+    .option('-m, --max-offset [maxOffset]', 'only show n bytes, setting to 0 means show whole file', 0)
+    .option('-O, --no-offset', 'do not show file offset', false)
+    .option('-s, --start-offset [startOffset]', 'start at specified offset', 0)
     .version(version, '-v, --version')
     .parse(process.argv);
 
@@ -325,7 +349,7 @@ if (!program.args.length || !validateParams(program)) {
     const path = program.args[0];
 
     try {
-        var hexa = new HexaFile(path, program.blockSize, program.startOffset, program.hexa, program.offset);
+        var hexa = new HexaFile(path, program.blockSize, program.startOffset, program.hexa, program.offset, program.lineWidth, program.maxOffset);
         hexa.openFile();
         hexa.print();
     } catch (err) {
