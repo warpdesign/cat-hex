@@ -10,7 +10,11 @@ const program = require('commander'),
     // on older devices like USB 1.x sticks
     BUFFER_LENGTH = 512 * 1024,
     MAX_32BIT = 0xffffffff,
-    isWindows = process.platform == 'win32';
+    isWindows = process.platform == 'win32',
+    ERROR_CODES = {
+        'SIGINT': 2,
+        'SIGPIPE': 13
+    };
 
 class HexaFile {
     constructor(path, blockSize, startOffset, hexa, offset, lineWidth, maxOffset) {
@@ -48,9 +52,10 @@ class HexaFile {
             throw "Error: ch only works on files";
         }
 
-        if (this.fstat && !this.fstat.size) {
-            throw "Empty file";
-        }
+        // if (this.fstat && !this.fstat.size) {
+        //     console.log(this.fstat);
+        //     throw "Empty file";
+        // }
     }
 
     /**
@@ -107,8 +112,11 @@ class HexaFile {
     /**
      * Closes the file if opened
      */
-    cleanup() {
-        console.log('*** Interrupted');
+    cleanup(code) {
+        if (code === ERROR_CODES['SIGINT']) {
+            console.log('*** Interrupted');
+        }
+
         this.stopped = true;
         if (this.fd) {
             fs.closeSync(this.fd);
@@ -315,11 +323,11 @@ program.arguments('ch <file>')
  * Global cleanup function called when closing pipe
  * or read error occured
  */
-function cleanup() {
+function cleanup(code = 0) {
     if (hexa) {
-        hexa.cleanup();
+        hexa.cleanup(code);
     }
-    process.exit();
+    process.exit(code);
 }
 
 /**
@@ -327,19 +335,23 @@ function cleanup() {
  * it means pipe has ended (eg. user used ch foo |more and
  * pressed `q` to exit)
  */
-process.on('SIGPIPE', cleanup);
+process.on('SIGPIPE', err => {
+    cleanup(ERROR_CODES['SIGPIPE']);
+});
 
 /**
  * Detect CTRL+C and stop feeding stdout in that case
  */
-process.on('SIGINT', cleanup);
+process.on('SIGINT', err => {
+    cleanup(ERROR_CODES['SIGINT']);
+});
 
 /**
  * Properly catch pipe exit on Windows needs a special case
  */
 process.stdout.on('error', (err) => {
-    if (err.code == "EPIPE") {
-        cleanup();
+    if (err.code === "EPIPE") {
+        cleanup(ERROR_CODES['SIGPIPE']);
     }
 });
 
@@ -353,7 +365,8 @@ if (!program.args.length || !validateParams(program)) {
         hexa.openFile();
         hexa.print();
     } catch (err) {
-        console.log(err);
-        cleanup();
+        console.log('error', err, typeof err.code);
+        // console.log(err);
+        cleanup(err && err.code || 0);
     }
 }
