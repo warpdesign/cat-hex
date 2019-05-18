@@ -12,9 +12,15 @@ const program = require('commander'),
     MAX_32BIT = 0xffffffff,
     isWindows = process.platform == 'win32',
     ERROR_CODES = {
-        'SIGINT': 2,
-        'SIGPIPE': 13
-    };
+        'SIGINT': -1,
+        'SIGPIPE': -1,
+        'IS_A_DIRECTORY': 1,
+        'ENOENT': 2
+    },
+    ERROR_MESSAGES = {
+        '2': 'No such file or directory',
+        '1': 'Is a directory'
+    } 
 
 class HexaFile {
     constructor(path, blockSize, startOffset, hexa, offset, lineWidth, maxOffset) {
@@ -37,6 +43,13 @@ class HexaFile {
         });
     }
 
+    throwError(codeName) {
+        const error = new Error();
+        error.code = ERROR_CODES[codeName];
+
+        throw error;        
+    }
+
     /**
      * Returns stats of file, throwing an error
      * if path points to a directory
@@ -45,11 +58,15 @@ class HexaFile {
         try {
             this.fstat = fs.statSync(this.path);
         } catch (err) {
-            throw "Error: cannot open file " + this.path;
+            this.throwError(err.code);
         }
 
         if (this.fstat && this.fstat.isDirectory()) {
-            throw "Error: ch only works on files";
+            // throw "Error: ch only works on files";
+            // const error = new Error();
+            // error.code = ERROR_CODES['IS_A_DIRECTORY'];
+            // throw error;
+            this.throwError('IS_A_DIRECTORY');            
         }
 
         // if (this.fstat && !this.fstat.size) {
@@ -109,6 +126,11 @@ class HexaFile {
         fs.readSync(this.fd, this.buffer, 0, BUFFER_LENGTH, offset);
     }
 
+    printError(code) {
+        const message = ERROR_MESSAGES[code];
+        console.log(`${program._name}: ${this.path}: ${message}`);
+    }
+
     /**
      * Closes the file if opened
      */
@@ -121,6 +143,8 @@ class HexaFile {
         if (this.fd) {
             fs.closeSync(this.fd);
         }
+
+        this.printError(code);
     }
 
     /**
@@ -327,7 +351,8 @@ function cleanup(code = 0) {
     if (hexa) {
         hexa.cleanup(code);
     }
-    process.exit(code);
+
+    process.exitCode = code;
 }
 
 /**
@@ -365,8 +390,6 @@ if (!program.args.length || !validateParams(program)) {
         hexa.openFile();
         hexa.print();
     } catch (err) {
-        console.log('error', err, typeof err.code);
-        // console.log(err);
         cleanup(err && err.code || 0);
     }
 }
