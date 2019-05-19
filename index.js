@@ -151,7 +151,7 @@ class HexaFile {
             fs.closeSync(this.fd);
         }
 
-        if (code.match(/SIGINT|EPIPE/)) {
+        if (code.match(/SIGINT|EPIPE/) && !isWindows) {
             console.log('*** Interrupted');
         } else {
             this.printError(code);
