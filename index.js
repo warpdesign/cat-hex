@@ -111,7 +111,7 @@ class HexaFile {
      */
     checkStartOffset() {
         if (this.currentOffset >= this.fstat.size) {
-            console.log('Warning: specified start offset is out of bounds, using default start offset of 0');
+            // console.log('Warning: specified start offset is out of bounds, using default start offset of 0');
             this.currentOffset = 0;
             this.bufferStart = 0;
         }
