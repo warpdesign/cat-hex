@@ -15,12 +15,14 @@ const program = require('commander'),
         'SIGINT': -1,
         'SIGPIPE': -1,
         'IS_A_DIRECTORY': 1,
-        'ENOENT': 2
+        'ENOENT': 2,
+        'EACCES': 13
     },
     ERROR_MESSAGES = {
         '2': 'No such file or directory',
-        '1': 'Is a directory'
-    } 
+        '1': 'Is a directory',
+        '13': 'Permission denied'
+    }
 
 class HexaFile {
     constructor(path, blockSize, startOffset, hexa, offset, lineWidth, maxOffset) {
@@ -47,7 +49,7 @@ class HexaFile {
         const error = new Error();
         error.code = ERROR_CODES[codeName];
 
-        throw error;        
+        throw error;
     }
 
     /**
@@ -66,7 +68,7 @@ class HexaFile {
             // const error = new Error();
             // error.code = ERROR_CODES['IS_A_DIRECTORY'];
             // throw error;
-            this.throwError('IS_A_DIRECTORY');            
+            this.throwError('IS_A_DIRECTORY');
         }
 
         // if (this.fstat && !this.fstat.size) {
@@ -127,24 +129,31 @@ class HexaFile {
     }
 
     printError(code) {
+        if (typeof code === 'string') {
+            code = ERROR_CODES[code] || 0;
+        }
+
         const message = ERROR_MESSAGES[code];
-        console.log(`${program._name}: ${this.path}: ${message}`);
+
+        if (message) {
+            console.log(`${program._name}: ${this.path}: ${message}`);
+        }
     }
 
     /**
      * Closes the file if opened
      */
     cleanup(code) {
-        if (code === ERROR_CODES['SIGINT']) {
-            console.log('*** Interrupted');
-        }
-
         this.stopped = true;
         if (this.fd) {
             fs.closeSync(this.fd);
         }
 
-        this.printError(code);
+        if (code === ERROR_CODES['SIGINT']) {
+            console.log('*** Interrupted');
+        } else {
+            this.printError(code);
+        }
     }
 
     /**
