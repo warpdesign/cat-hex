@@ -12,8 +12,8 @@ const program = require('commander'),
     MAX_32BIT = 0xffffffff,
     isWindows = process.platform == 'win32',
     ERROR_CODES = {
-        'SIGINT': -1,
-        'SIGPIPE': -1,
+        'SIGINT': 130,
+        'SIGPIPE': 0,
         'IS_A_DIRECTORY': 1,
         'ENOENT': 2,
         'EACCES': 13
@@ -39,16 +39,27 @@ class HexaFile {
         this.bindDrainEvent();
     }
 
+    /**
+     * Listens for the drain even on process.stdout
+     * 
+     * This is called when the stdout buffer is ready to receive
+     * more data: this allows us to detect cases like being
+     * paused in more for example.
+     */
     bindDrainEvent() {
         process.stdout.on('drain', () => {
             this.printLine();
         });
     }
 
+    /**
+     * Throws an error with the specified code
+     * 
+     * @param {string} codeName the code to set
+     */
     throwError(codeName) {
         const error = new Error();
-        error.code = ERROR_CODES[codeName];
-
+        error.code = codeName;
         throw error;
     }
 
@@ -57,24 +68,11 @@ class HexaFile {
      * if path points to a directory
      */
     statFile() {
-        try {
-            this.fstat = fs.statSync(this.path);
-        } catch (err) {
-            this.throwError(err.code);
-        }
+        this.fstat = fs.statSync(this.path);
 
         if (this.fstat && this.fstat.isDirectory()) {
-            // throw "Error: ch only works on files";
-            // const error = new Error();
-            // error.code = ERROR_CODES['IS_A_DIRECTORY'];
-            // throw error;
             this.throwError('IS_A_DIRECTORY');
         }
-
-        // if (this.fstat && !this.fstat.size) {
-        //     console.log(this.fstat);
-        //     throw "Empty file";
-        // }
     }
 
     /**
@@ -113,7 +111,6 @@ class HexaFile {
      */
     checkStartOffset() {
         if (this.currentOffset >= this.fstat.size) {
-            // console.log('Warning: specified start offset is out of bounds, using default start offset of 0');
             this.currentOffset = 0;
             this.bufferStart = 0;
         }
@@ -128,11 +125,13 @@ class HexaFile {
         fs.readSync(this.fd, this.buffer, 0, BUFFER_LENGTH, offset);
     }
 
+    /**
+     * Prints human error message from code
+     * 
+     * @param {string} code the error code
+     */
     printError(code) {
-        if (typeof code === 'string') {
-            code = ERROR_CODES[code] || 0;
-        }
-
+        code = ERROR_CODES[code] || 0;
         const message = ERROR_MESSAGES[code];
 
         if (message) {
@@ -145,11 +144,14 @@ class HexaFile {
      */
     cleanup(code) {
         this.stopped = true;
-        if (this.fd) {
+
+        // file descriptor is not valid when EPIPE is received because
+        // the file has already been closed
+        if (this.fd && code !== 'EPIPE') {
             fs.closeSync(this.fd);
         }
 
-        if (code === ERROR_CODES['SIGINT']) {
+        if (code.match(/SIGINT|EPIPE/)) {
             console.log('*** Interrupted');
         } else {
             this.printError(code);
@@ -354,14 +356,15 @@ program.arguments('ch <file>')
 
 /**
  * Global cleanup function called when closing pipe
- * or read error occured
+ * or read error occured: calls hexa.cleanup()
+ * and sets process exit code.
  */
-function cleanup(code = 0) {
+function cleanup(codeName = 0) {
     if (hexa) {
-        hexa.cleanup(code);
+        hexa.cleanup(codeName);
     }
 
-    process.exitCode = code;
+    process.exitCode = ERROR_CODES[codeName] || 0;
 }
 
 /**
@@ -370,23 +373,21 @@ function cleanup(code = 0) {
  * pressed `q` to exit)
  */
 process.on('SIGPIPE', err => {
-    cleanup(ERROR_CODES['SIGPIPE']);
+    cleanup('SIGPIPE');
 });
 
 /**
  * Detect CTRL+C and stop feeding stdout in that case
  */
 process.on('SIGINT', err => {
-    cleanup(ERROR_CODES['SIGINT']);
+    cleanup('SIGINT');
 });
 
 /**
  * Properly catch pipe exit on Windows needs a special case
  */
 process.stdout.on('error', (err) => {
-    if (err.code === "EPIPE") {
-        cleanup(ERROR_CODES['SIGPIPE']);
-    }
+    cleanup(err.code);
 });
 
 if (!program.args.length || !validateParams(program)) {
