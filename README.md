@@ -13,10 +13,12 @@ This will install a new `ch` command.
 
   Options:
 
-    -O, --no-offset                   do not show file offset
-    -H, --no-hexa                     do not display hexadecimal content
-    -s, --start-offset [startOffset]  start at specified offset (default: 0)
     -b, --block-size [blockSize]      size of block, can be 8, 16, 32, 64 (default: 8)
+    -H, --no-hexa                     do not display hexadecimal content
+    -l, --line-width [lineWidth]      line width in bytes (default: 16)
+    -m, --max-offset [maxOffset]      only show n bytes, setting to 0 means show whole file (default: 0)
+    -O, --no-offset                   do not show file offset
+    -s, --start-offset [startOffset]  start at specified offset (default: 0)
     -v, --version                     output the version number
     -h, --help                        output usage information
 ```
