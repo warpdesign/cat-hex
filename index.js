@@ -10,7 +10,19 @@ const program = require('commander'),
     // on older devices like USB 1.x sticks
     BUFFER_LENGTH = 512 * 1024,
     MAX_32BIT = 0xffffffff,
-    isWindows = process.platform == 'win32';
+    isWindows = process.platform == 'win32',
+    ERROR_CODES = {
+        'SIGINT': 130,
+        'SIGPIPE': 0,
+        'IS_A_DIRECTORY': 1,
+        'ENOENT': 2,
+        'EACCES': 13
+    },
+    ERROR_MESSAGES = {
+        '2': 'No such file or directory',
+        '1': 'Is a directory',
+        '13': 'Permission denied'
+    }
 
 class HexaFile {
     constructor(path, blockSize, startOffset, hexa, offset, lineWidth, maxOffset) {
@@ -27,6 +39,13 @@ class HexaFile {
         this.bindDrainEvent();
     }
 
+    /**
+     * Listens for the drain even on process.stdout
+     * 
+     * This is called when the stdout buffer is ready to receive
+     * more data: this allows us to detect cases like being
+     * paused in more for example.
+     */
     bindDrainEvent() {
         process.stdout.on('drain', () => {
             this.printLine();
@@ -34,22 +53,25 @@ class HexaFile {
     }
 
     /**
+     * Throws an error with the specified code
+     * 
+     * @param {string} codeName the code to set
+     */
+    throwError(codeName) {
+        const error = new Error();
+        error.code = codeName;
+        throw error;
+    }
+
+    /**
      * Returns stats of file, throwing an error
      * if path points to a directory
      */
     statFile() {
-        try {
-            this.fstat = fs.statSync(this.path);
-        } catch (err) {
-            throw "Error: cannot open file " + this.path;
-        }
+        this.fstat = fs.statSync(this.path);
 
         if (this.fstat && this.fstat.isDirectory()) {
-            throw "Error: ch only works on files";
-        }
-
-        if (this.fstat && !this.fstat.size) {
-            throw "Empty file";
+            this.throwError('IS_A_DIRECTORY');
         }
     }
 
@@ -89,7 +111,6 @@ class HexaFile {
      */
     checkStartOffset() {
         if (this.currentOffset >= this.fstat.size) {
-            console.log('Warning: specified start offset is out of bounds, using default start offset of 0');
             this.currentOffset = 0;
             this.bufferStart = 0;
         }
@@ -105,13 +126,35 @@ class HexaFile {
     }
 
     /**
+     * Prints human error message from code
+     * 
+     * @param {string} code the error code
+     */
+    printError(code) {
+        code = ERROR_CODES[code] || 0;
+        const message = ERROR_MESSAGES[code];
+
+        if (message) {
+            console.log(`${program._name}: ${this.path}: ${message}`);
+        }
+    }
+
+    /**
      * Closes the file if opened
      */
-    cleanup() {
-        console.log('*** Interrupted');
+    cleanup(code) {
         this.stopped = true;
-        if (this.fd) {
+
+        // file descriptor is not valid when EPIPE is received because
+        // the file has already been closed
+        if (this.fd && code !== 'EPIPE') {
             fs.closeSync(this.fd);
+        }
+
+        if (code.match(/SIGINT|EPIPE/)) {
+            console.log('*** Interrupted');
+        } else {
+            this.printError(code);
         }
     }
 
@@ -313,13 +356,15 @@ program.arguments('ch <file>')
 
 /**
  * Global cleanup function called when closing pipe
- * or read error occured
+ * or read error occured: calls hexa.cleanup()
+ * and sets process exit code.
  */
-function cleanup() {
+function cleanup(codeName = 0) {
     if (hexa) {
-        hexa.cleanup();
+        hexa.cleanup(codeName);
     }
-    process.exit();
+
+    process.exitCode = ERROR_CODES[codeName] || 0;
 }
 
 /**
@@ -327,20 +372,22 @@ function cleanup() {
  * it means pipe has ended (eg. user used ch foo |more and
  * pressed `q` to exit)
  */
-process.on('SIGPIPE', cleanup);
+process.on('SIGPIPE', err => {
+    cleanup('SIGPIPE');
+});
 
 /**
  * Detect CTRL+C and stop feeding stdout in that case
  */
-process.on('SIGINT', cleanup);
+process.on('SIGINT', err => {
+    cleanup('SIGINT');
+});
 
 /**
  * Properly catch pipe exit on Windows needs a special case
  */
 process.stdout.on('error', (err) => {
-    if (err.code == "EPIPE") {
-        cleanup();
-    }
+    cleanup(err.code);
 });
 
 if (!program.args.length || !validateParams(program)) {
@@ -353,7 +400,6 @@ if (!program.args.length || !validateParams(program)) {
         hexa.openFile();
         hexa.print();
     } catch (err) {
-        console.log(err);
-        cleanup();
+        cleanup(err && err.code || 0);
     }
 }
